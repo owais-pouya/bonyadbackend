@@ -1,6 +1,6 @@
 -- =========================================================
 -- Bonyad Materials — PostgreSQL schema
--- Run with:  psql "$DATABASE_URL" -f src/db/schema.sql
+-- Run with:  psql "$DATABASE_URL" -f database/schema.sql
 -- Idempotent: safe to re-run.
 -- =========================================================
 

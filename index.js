@@ -10,13 +10,18 @@ import enquiriesRouter from "./routes/enquiries.js";
 
 const app = express();
 
+// Behind Vercel's proxy: needed so req.ip (rate limiting) is the real client IP.
+app.set("trust proxy", 1);
+
+// Allowed browser origins (only relevant when the browser calls this API directly;
+// the deployed frontend proxies /api so it is same-origin).
+const allowedOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
 // CORS must echo the origin AND allow credentials for the httpOnly cookie.
-app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN?.split(",") ?? "http://localhost:5173",
-    credentials: true,
-  }),
-);
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 // Parses the bonyad_token cookie into req.cookies.
 app.use(cookieParser());
@@ -29,6 +34,20 @@ app.get("/api/health", (_req, res) => {
     service: "bonyad-backend",
     time: new Date().toISOString(),
   });
+});
+
+// Deployment check: confirms the database is reachable and tables exist.
+app.get("/api/health/db", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT (SELECT count(*) FROM materials)::int AS materials,
+              (SELECT count(*) FROM admins)::int    AS admins`,
+    );
+    res.json({ ok: true, ...rows[0] });
+  } catch (err) {
+    console.error("DB health check failed:", err.message);
+    res.status(503).json({ ok: false, error: "Database not reachable or schema missing" });
+  }
 });
 
 app.use("/api/auth", authRouter);

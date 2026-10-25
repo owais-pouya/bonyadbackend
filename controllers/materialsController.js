@@ -1,4 +1,5 @@
 import { query } from "../config/db.js";
+import { httpError } from "../middleware/errorHandler.js";
 
 // DB row (snake_case) -> API object (camelCase, matches React).
 const toApi = (row) => ({
@@ -11,18 +12,23 @@ const toApi = (row) => ({
   description: row.description,
 });
 
+const first = (v) => (Array.isArray(v) ? v[0] : v);
+
 // GET /api/materials?category=&search=&sort=low|high&available=true
 export async function listMaterials(req, res) {
-  const { category, search, sort, available } = req.query;
+  const category = first(req.query.category);
+  const search = first(req.query.search);
+  const sort = first(req.query.sort);
+  const available = first(req.query.available);
   const where = [];
   const params = [];
 
   if (category && category !== "all") {
-    params.push(category);
+    params.push(String(category));
     where.push(`category = $${params.length}`);
   }
   if (search) {
-    params.push(`%${search.toLowerCase()}%`);
+    params.push(`%${String(search).toLowerCase()}%`);
     where.push(`lower(name) LIKE $${params.length}`);
   }
   if (available === "true") {
@@ -30,8 +36,8 @@ export async function listMaterials(req, res) {
   }
 
   let order = "id ASC";
-  if (sort === "low") order = "unit_price_afn ASC";
-  if (sort === "high") order = "unit_price_afn DESC";
+  if (sort === "low") order = "unit_price_afn ASC, id ASC";
+  if (sort === "high") order = "unit_price_afn DESC, id ASC";
 
   const sql = `
     SELECT * FROM materials
@@ -47,11 +53,7 @@ export async function getMaterial(req, res) {
   const { rows } = await query("SELECT * FROM materials WHERE id = $1", [
     req.params.id,
   ]);
-  if (!rows.length) {
-    const err = new Error("Material not found");
-    err.status = 404;
-    throw err;
-  }
+  if (!rows.length) throw httpError(404, "Material not found");
   res.json(toApi(rows[0]));
 }
 
@@ -62,14 +64,7 @@ export async function createMaterial(req, res) {
     `INSERT INTO materials (name, category, unit, unit_price_afn, available_quantity, description)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [
-      m.name,
-      m.category,
-      m.unit,
-      m.unitPriceAFN,
-      m.availableQuantity,
-      m.description,
-    ],
+    [m.name, m.category, m.unit, m.unitPriceAFN, m.availableQuantity, m.description],
   );
   res.status(201).json(toApi(rows[0]));
 }
@@ -83,21 +78,9 @@ export async function updateMaterial(req, res) {
             unit_price_afn = $4, available_quantity = $5, description = $6
       WHERE id = $7
       RETURNING *`,
-    [
-      m.name,
-      m.category,
-      m.unit,
-      m.unitPriceAFN,
-      m.availableQuantity,
-      m.description,
-      req.params.id,
-    ],
+    [m.name, m.category, m.unit, m.unitPriceAFN, m.availableQuantity, m.description, req.params.id],
   );
-  if (!rows.length) {
-    const err = new Error("Material not found");
-    err.status = 404;
-    throw err;
-  }
+  if (!rows.length) throw httpError(404, "Material not found");
   res.json(toApi(rows[0]));
 }
 
@@ -106,10 +89,6 @@ export async function deleteMaterial(req, res) {
   const { rowCount } = await query("DELETE FROM materials WHERE id = $1", [
     req.params.id,
   ]);
-  if (!rowCount) {
-    const err = new Error("Material not found");
-    err.status = 404;
-    throw err;
-  }
+  if (!rowCount) throw httpError(404, "Material not found");
   res.status(204).end();
 }
